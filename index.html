@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hello / World Demo</title>
+  <style>
+    html,body { height:100%; margin:0; display:flex; justify-content:center; align-items:center; font-family:sans-serif; }
+    main { text-align:center; }
+    h1 { font-size:4rem; margin:0; }
+    button { margin-top:1rem; padding:.5rem 1rem; font-size:1rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title"></h1>
+    <button id="reset">Reset</button>
+  </main>
+
+  <script>
+    (function () {
+      const KEY = "firstVisitDone_v3";
+      const title = document.getElementById("title");
+
+      function safeGet(k) {
+        try { return localStorage.getItem(k); } catch { return null; }
+      }
+      function safeSet(k, v) {
+        try { localStorage.setItem(k, v); } catch {}
+      }
+      function safeRemove(k) {
+        try { localStorage.removeItem(k); } catch {}
+      }
+
+      if (safeGet(KEY)) {
+        title.textContent = "World";
+      } else {
+        title.textContent = "Hello";
+        safeSet(KEY, "yes");
+      }
+
+      document.getElementById("reset").addEventListener("click", () => {
+        safeRemove(KEY);
+        location.reload();
+      });
+    })();
+  </script>
+
+    
+    
+
+    <div style="position:fixed;bottom:20px;right:20px;">
+        <button onclick="try{localStorage.removeItem('visited');localStorage.removeItem('helloWorldVisitedV2');}catch(e){} location.reload();" 
+                style="padding:10px 20px;font-size:16px;cursor:pointer;">
+            Reset Visit
+        </button>
+    </div>
+    
+
+    
+    
+
+<!-- visit-logic-injected -->
+<script>
+(function(){
+    var KEY = "helloWorldVisitedV2";
+    try {
+        var visited = localStorage.getItem(KEY);
+        var target = document.getElementById("message") || document.body;
+        if (visited === "true") {
+            target.innerHTML = "World";
+        } else {
+            target.innerHTML = "Hello";
+            localStorage.setItem(KEY, "true");
+        }
+    } catch (e) {
+        var target = document.getElementById("message") || document.body;
+        if (!window.__visitedOnce) {
+            target.innerHTML = "Hello";
+            window.__visitedOnce = true;
+        } else {
+            target.innerHTML = "World";
+        }
+    }
+})();
+</script>
+
+</body>
+</html>
