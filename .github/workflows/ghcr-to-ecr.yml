@@ -1,4 +1,4 @@
-name: Mirror GHCR (or build) -> ECR
+name: Mirror GHCR (or build) -> ECR (DEBUG)
 
 on:
   workflow_dispatch:
@@ -13,32 +13,30 @@ jobs:
       packages: read
     env:
       IMAGE_TAG: latest
-      ECR_REPOSITORY: hello-word-juhiirohila   # ECR repo name
+      ECR_REPOSITORY: hello-word-juhiirohila
       GHCR_IMAGE: ghcr.io/juhi0589/hello-word-juhiirohila:latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Only needed if GHCR package is private
-      - name: Login to GHCR (if private)
-        if: ${{ secrets.GHCR_PAT != '' }}
+      - name: Show inputs
         run: |
-          echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+          echo "GHCR_IMAGE=$GHCR_IMAGE"
+          echo "ECR_REPOSITORY=$ECR_REPOSITORY"
+          echo "IMAGE_TAG=$IMAGE_TAG"
 
       - name: Pull from GHCR or build locally
         run: |
-          set -euo pipefail
-          echo "Attempting to pull $GHCR_IMAGE ..."
+          set -euxo pipefail
           if docker pull "$GHCR_IMAGE"; then
             echo "SRC_IMAGE=$GHCR_IMAGE" >> $GITHUB_ENV
-            echo "Using image from GHCR."
+            echo "Using GHCR image"
           else
-            echo "Pull failed; building locally from Dockerfile..."
+            echo "Pull failed; building locally"
             docker build -t local:$IMAGE_TAG .
             echo "SRC_IMAGE=local:$IMAGE_TAG" >> $GITHUB_ENV
           fi
-          echo "Local images:"
           docker images
 
       - name: Configure AWS
@@ -46,44 +44,45 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1   # 👈 your region
+          aws-region: eu-central-1
 
       - name: Show AWS identity & region
         run: |
-          set -euo pipefail
-          echo "AWS REGION: eu-central-1"
+          set -euxo pipefail
+          echo "AWS REGION (configured): eu-central-1"
           aws sts get-caller-identity
 
       - name: Login to ECR
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.eu-central-1.amazonaws.com"
+          echo "ACCOUNT_ID=$ACCOUNT_ID"
+          echo "REGISTRY=$REGISTRY"
           echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
           echo "REGISTRY=$REGISTRY" >> $GITHUB_ENV
-          aws ecr get-login-password --region eu-central-1 \
-            | docker login --username AWS --password-stdin "$REGISTRY"
+          aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin "$REGISTRY"
 
-      - name: Ensure ECR repository exists
+      - name: Ensure ECR repository exists (or show error)
         run: |
-          set -euo pipefail
-          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 \
-            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
-          echo "ECR repository ready: $ECR_REPOSITORY"
+          set -euxo pipefail
+          if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1; then
+            echo "Repo exists: $ECR_REPOSITORY"
+          else
+            echo "Repo missing; attempting to create…"
+            aws ecr create-repository --repository-name "$ECR_REPOSITORY"
+          fi
+          echo "Listing repos in eu-central-1:"
+          aws ecr describe-repositories --query 'repositories[].repositoryName'
 
       - name: Tag & push to ECR
         run: |
-          set -euo pipefail
-          echo "REGISTRY=$REGISTRY"
-          echo "REPOSITORY=$ECR_REPOSITORY"
-          echo "IMAGE_TAG=$IMAGE_TAG"
+          set -euxo pipefail
           echo "SRC_IMAGE=$SRC_IMAGE"
-
           TARGET="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          echo "Tagging '$SRC_IMAGE' -> '$TARGET'"
+          echo "TARGET=$TARGET"
           docker tag "$SRC_IMAGE" "$TARGET"
           docker push "$TARGET"
-
           echo "Describe pushed image:"
           aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG"
 
