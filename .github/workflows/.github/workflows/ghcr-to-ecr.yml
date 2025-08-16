@@ -17,7 +17,7 @@ jobs:
       - name: Pull from GHCR
         env:
           # ⬇️ REPLACE THIS with your real GHCR image path
-          GHCR_IMAGE: ghcr.io/YOUR_GITHUB_USERNAME/YOUR_IMAGE:latest
+          GHCR_IMAGE: ghcr.io/juhi0589/hello-word-juhiirohila:latest
         run: |
           docker pull $GHCR_IMAGE
 
