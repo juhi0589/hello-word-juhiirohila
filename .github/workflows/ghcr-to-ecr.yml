@@ -1,4 +1,4 @@
-name: Mirror GHCR image to ECR
+name: Mirror GHCR (or build) -> ECR
 
 on:
   workflow_dispatch:
@@ -6,20 +6,40 @@ on:
     branches: [ "main" ]
 
 jobs:
-  mirror:
+  push-to-ecr:
     runs-on: ubuntu-latest
     steps:
-      - name: Login to GHCR (skip if image is public)
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Login to GHCR only if you provided a PAT (for private images)
+      - name: Login to GHCR (if private)
         if: ${{ secrets.GHCR_PAT != '' }}
         run: |
           echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-      - name: Pull from GHCR
-        env:
-          # ⬇️ Replace this with your actual GHCR image name
-          GHCR_IMAGE: ghcr.io/juhi0589/hello-word-juhiirohila:latest
+      - name: Set vars
+        id: vars
         run: |
-          docker pull $GHCR_IMAGE
+          echo "GHCR_IMAGE=ghcr.io/juhi0589/hello-word-juhiirohila:latest" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG=prod" >> $GITHUB_OUTPUT
+
+      - name: Try pull from GHCR; else build locally
+        env:
+          GHCR_IMAGE: ${{ steps.vars.outputs.GHCR_IMAGE }}
+        run: |
+          set -e
+          echo "Attempting to pull $GHCR_IMAGE ..."
+          if docker pull "$GHCR_IMAGE"; then
+            echo "Pulled GHCR image."
+            docker images | grep -E "hello-word|<none>" || true
+            echo "SRC_IMAGE=$GHCR_IMAGE" >> $GITHUB_ENV
+          else
+            echo "GHCR pull failed. Building from local Dockerfile..."
+            docker build -t local:${{ steps.vars.outputs.IMAGE_TAG }} .
+            docker images | grep local || true
+            echo "SRC_IMAGE=local:${{ steps.vars.outputs.IMAGE_TAG }}" >> $GITHUB_ENV
+          fi
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -33,11 +53,17 @@ jobs:
 
       - name: Tag & push to ECR
         env:
+          SRC_IMAGE: ${{ env.SRC_IMAGE }}
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
         run: |
-          docker tag $GHCR_IMAGE $ECR_REGISTRY/$ECR_REPOSITORY:prod
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:prod
+          set -e
+          echo "Tagging $SRC_IMAGE as $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker tag "$SRC_IMAGE" "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "Pushed image digest(s):"
+          aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG"
 
       - name: Output image URI
         run: echo "Pushed: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:prod"
