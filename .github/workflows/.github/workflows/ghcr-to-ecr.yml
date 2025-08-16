@@ -9,14 +9,14 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Login to GHCR (skip if your image is public)
+      - name: Login to GHCR (skip if image is public)
         if: ${{ secrets.GHCR_PAT != '' }}
         run: |
           echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
       - name: Pull from GHCR
         env:
-          # ⬇️ REPLACE THIS with your real GHCR image path
+          # ⬇️ Replace this with your actual GHCR image name
           GHCR_IMAGE: ghcr.io/juhi0589/hello-word-juhiirohila:latest
         run: |
           docker pull $GHCR_IMAGE
