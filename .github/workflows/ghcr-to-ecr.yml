@@ -8,6 +8,14 @@ on:
 jobs:
   push-to-ecr:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE_TAG: latest
+      ECR_REPOSITORY: hello-word-juhiirohila   # ECR repo name
+      GHCR_IMAGE: ghcr.io/juhi0589/hello-word-juhiirohila:latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,50 +26,67 @@ jobs:
         run: |
           echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-      - name: Set vars
-        id: vars
+      - name: Pull from GHCR or build locally
         run: |
-          echo "GHCR_IMAGE=ghcr.io/juhi0589/hello-word-juhiirohila:latest" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG=latest" >> $GITHUB_OUTPUT
-
-      - name: Try pull from GHCR; else build locally
-        env:
-          GHCR_IMAGE: ${{ steps.vars.outputs.GHCR_IMAGE }}
-        run: |
-          set -e
+          set -euo pipefail
           echo "Attempting to pull $GHCR_IMAGE ..."
           if docker pull "$GHCR_IMAGE"; then
-            echo "Pulled GHCR image."
             echo "SRC_IMAGE=$GHCR_IMAGE" >> $GITHUB_ENV
+            echo "Using image from GHCR."
           else
-            echo "GHCR pull failed. Building from local Dockerfile..."
-            docker build -t local:${{ steps.vars.outputs.IMAGE_TAG }} .
-            echo "SRC_IMAGE=local:${{ steps.vars.outputs.IMAGE_TAG }}" >> $GITHUB_ENV
+            echo "Pull failed; building locally from Dockerfile..."
+            docker build -t local:$IMAGE_TAG .
+            echo "SRC_IMAGE=local:$IMAGE_TAG" >> $GITHUB_ENV
           fi
+          echo "Local images:"
+          docker images
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: eu-central-1   # 👈 your region
+
+      - name: Show AWS identity & region
+        run: |
+          set -euo pipefail
+          echo "AWS REGION: eu-central-1"
+          aws sts get-caller-identity
 
       - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.eu-central-1.amazonaws.com"
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+          echo "REGISTRY=$REGISTRY" >> $GITHUB_ENV
+          aws ecr get-login-password --region eu-central-1 \
+            | docker login --username AWS --password-stdin "$REGISTRY"
+
+      - name: Ensure ECR repository exists
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 \
+            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
+          echo "ECR repository ready: $ECR_REPOSITORY"
 
       - name: Tag & push to ECR
-        env:
-          SRC_IMAGE: ${{ env.SRC_IMAGE }}
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
         run: |
-          set -e
-          echo "Tagging $SRC_IMAGE as $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          docker tag "$SRC_IMAGE" "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          set -euo pipefail
+          echo "REGISTRY=$REGISTRY"
+          echo "REPOSITORY=$ECR_REPOSITORY"
+          echo "IMAGE_TAG=$IMAGE_TAG"
+          echo "SRC_IMAGE=$SRC_IMAGE"
+
+          TARGET="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "Tagging '$SRC_IMAGE' -> '$TARGET'"
+          docker tag "$SRC_IMAGE" "$TARGET"
+          docker push "$TARGET"
+
+          echo "Describe pushed image:"
           aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG"
 
       - name: Output image URI
         run: |
-          echo "Pushed: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.vars.outputs.IMAGE_TAG }}"
+          echo "Pushed: $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
