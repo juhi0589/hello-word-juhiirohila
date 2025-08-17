@@ -78,7 +78,7 @@ Select your Dockerrun.aws.json file → Deploy
 Wait until health is Green.
 
 Verify
-Open the environment URL shown in EB (also listed at the top of this README).
+Open the environment URL shown in EB.
 
 First visit shows Hello.
 
@@ -101,9 +101,8 @@ upload Dockerrun.aws.json again in Upload and deploy.
 Troubleshooting
 Symptom	Cause	Fix
 EB deploy fails or remains grey	EB needs a valid Dockerrun.aws.json	Ensure the file name is exactly Dockerrun.aws.json and JSON is valid
-EB stuck “Downloading Docker image”	EB instance can’t pull from ECR	Attach AmazonEC2ContainerRegistryReadOnly to EB instance profile; ensure outbound internet/NAT
-502 / Unhealthy	Wrong container port	Confirm ContainerPort is 80 and Nginx listens on 80
-ECR repo not found	Repo not created or wrong name	Create hello-word-juhiirohila repo in ECR (eu-central-1)
+EB stuck “Downloading Docker image”	EB instance can’t pull from ECR	Attach AmazonEC2ContainerRegistryReadOnly to EB instance profile
+
 Clean-up
 
 Terminate the EB environment and delete the application if not needed.
